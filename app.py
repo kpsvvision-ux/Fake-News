@@ -12,7 +12,7 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 
 st.title("Fake News Detection Application")
 
-# Function to clean the text
+# Function to clean text
 def wordopt(text):
     text = text.lower()
     text = re.sub('\[.*?\]', '', text)
@@ -25,138 +25,95 @@ def wordopt(text):
     return text
 
 
-# ---------------------- Upload Training Data ----------------------
+# ======================= Upload Training Data ==========================
 st.subheader("Upload Your Training Datasets")
 fake_file = st.file_uploader("Upload Fake.csv", type=["csv"])
 true_file = st.file_uploader("Upload True.csv", type=["csv"])
 
 
-# ---------------------- Data Preparation -------------------------
-@st.cache_resource
-def load_and_prepare_data(fake_df, true_df):
-    fake_df["class"] = 0
-    true_df["class"] = 1
+if fake_file and true_file:
 
-    fake_df = fake_df.iloc[:-10]
-    true_df = true_df.iloc[:-10]
+    st.success("Training datasets uploaded successfully.")
 
-    df_merge = pd.concat([fake_df, true_df], axis=0)
-    df_merge = df_merge.drop(["title", "subject", "date"], axis=1)
-    df_merge = df_merge.sample(frac=1).reset_index(drop=True)
-    df_merge["text"] = df_merge["text"].apply(wordopt)
+    # ==================== PREPARE DATA ==========================
+    @st.cache_resource
+    def load_and_prepare_data(fake_df, true_df):
+        fake_df["class"] = 0
+        true_df["class"] = 1
 
-    x = df_merge["text"]
-    y = df_merge["class"]
-    return x, y
+        fake_df = fake_df.iloc[:-10]
+        true_df = true_df.iloc[:-10]
 
+        df = pd.concat([fake_df, true_df], axis=0)
+        df = df.drop(["title", "subject", "date"], axis=1)
+        df = df.sample(frac=1).reset_index(drop=True)
+        df["clean_text"] = df["text"].apply(wordopt)
+        return df
 
-@st.cache_resource
-def train_models(x, y):
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=42)
+    # ==================== TRAIN MODEL ==========================
+    @st.cache_resource
+    def train_model(df):
+        x = df["clean_text"]
+        y = df["class"]
 
-    vectorization = TfidfVectorizer()
-    xv_train = vectorization.fit_transform(x_train)
-    xv_test = vectorization.transform(x_test)
+        vectorizer = TfidfVectorizer()
+        X = vectorizer.fit_transform(x)
 
-    LR = LogisticRegression()
-    LR.fit(xv_train, y_train)
+        LR = LogisticRegression()
+        LR.fit(X, y)
 
-    DT = DecisionTreeClassifier()
-    DT.fit(xv_train, y_train)
-
-    GBC = GradientBoostingClassifier(
-        random_state=0, n_estimators=50, max_depth=2, subsample=0.8, max_features='sqrt'
-    )
-    GBC.fit(xv_train, y_train)
-
-    RFC = RandomForestClassifier(
-        random_state=0, n_estimators=100, max_depth=10, n_jobs=-1
-    )
-    RFC.fit(xv_train, y_train)
-
-    return vectorization, LR, DT, GBC, RFC, xv_test, y_test
-
-
-def output_label(n):
-    return "Fake News" if n == 0 else "Not Fake News"
-
-
-# ---------------------- Main Logic -------------------------
-if fake_file is not None and true_file is not None:
-
-    st.success("Training datasets uploaded successfully!")
+        return vectorizer, LR
 
     fake_df = pd.read_csv(fake_file)
     true_df = pd.read_csv(true_file)
 
-    x, y = load_and_prepare_data(fake_df, true_df)
-    vectorization, LR, DT, GBC, RFC, xv_test, y_test = train_models(x, y)
+    df = load_and_prepare_data(fake_df, true_df)
+    vectorizer, LR = train_model(df)
 
-    # Show model accuracy
-    st.subheader("Model Performance on Test Portion:")
-    st.write(f"Logistic Regression: {LR.score(xv_test, y_test):.4f}")
-    st.write(f"Decision Tree: {DT.score(xv_test, y_test):.4f}")
-    st.write(f"Gradient Boosting: {GBC.score(xv_test, y_test):.4f}")
-    st.write(f"Random Forest: {RFC.score(xv_test, y_test):.4f}")
-
+    # ==================== Option 1: Manual Text ==========================
     st.markdown("---")
     st.subheader("Option 1: Classify Manually Entered Text")
 
-    news_input = st.text_area("Enter news text below:", "", height=200)
+    news_input = st.text_area("Enter news text:", height=150)
 
     if st.button("Classify Text"):
-        if news_input:
-            processed_news = wordopt(news_input)
-            new_xv_test = vectorization.transform([processed_news])
-
-            pred = LR.predict(new_xv_test)[0]
-            st.write(f"**Prediction:** {output_label(pred)}")
+        if news_input.strip():
+            cleaned = wordopt(news_input)
+            x_vec = vectorizer.transform([cleaned])
+            pred = LR.predict(x_vec)[0]
+            st.success(f"Prediction: {'Fake News' if pred == 0 else 'Not Fake News'}")
         else:
             st.warning("Please enter some text to classify.")
 
+    # ==================== Option 2: Predict Random Training Records ==========================
     st.markdown("---")
-    st.subheader("Option 2: Upload Any Dataset for Prediction (Random Sample)")
-    st.write("Uploaded dataset must contain a **text** column.")
+    st.subheader("Option 2: Predict Random Records From Uploaded Dataset")
 
-    prediction_file = st.file_uploader("Upload dataset for prediction", type=["csv"])
+    sample_size = st.slider(
+        "How many random records do you want to predict?",
+        min_value=1,
+        max_value=20,
+        value=5
+    )
 
-    if prediction_file is not None:
-        pred_df = pd.read_csv(prediction_file)
+    if st.button("Predict Random Records"):
+        sample = df.sample(sample_size).copy()
+        sample_vectors = vectorizer.transform(sample["clean_text"])
+        sample["Prediction"] = LR.predict(sample_vectors)
+        sample["Prediction"] = sample["Prediction"].apply(
+            lambda x: "Fake News" if x == 0 else "Not Fake News"
+        )
 
-        if "text" not in pred_df.columns:
-            st.error("The uploaded dataset must contain a 'text' column.")
+        st.subheader("Random Predictions:")
+        st.dataframe(sample[["text", "Prediction"]])
 
-        else:
-            st.success("Prediction dataset loaded!")
-
-            # Select number of random rows
-            sample_size = st.number_input(
-                "Select number of random records to predict:",
-                min_value=1,
-                max_value=len(pred_df),
-                value=min(5, len(pred_df))
-            )
-
-            if st.button("Predict Random Records"):
-                sampled_df = pred_df.sample(n=sample_size).copy()
-
-                sampled_df["clean_text"] = sampled_df["text"].apply(wordopt)
-                sampled_vectors = vectorization.transform(sampled_df["clean_text"])
-
-                sampled_df["Prediction"] = LR.predict(sampled_vectors)
-                sampled_df["Prediction"] = sampled_df["Prediction"].apply(output_label)
-
-                st.subheader("Prediction Results on Random Records")
-                st.dataframe(sampled_df[["text", "Prediction"]])
-
-                csv = sampled_df.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    label="Download Random Predictions",
-                    data=csv,
-                    file_name="random_predictions.csv",
-                    mime="text/csv"
-                )
-
+        csv = sample.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download Predictions CSV",
+            csv,
+            "random_predictions.csv",
+            "text/csv"
+        )
 
 else:
     st.info("Please upload both Fake.csv and True.csv to train the model.")
