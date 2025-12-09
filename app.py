@@ -115,7 +115,7 @@ if fake_file is not None and true_file is not None:
             st.warning("Please enter some text to classify.")
 
     st.markdown("---")
-    st.subheader("Option 2: Upload Any Dataset for Prediction")
+    st.subheader("Option 2: Upload Any Dataset for Prediction (Random Sample)")
     st.write("Uploaded dataset must contain a **text** column.")
 
     prediction_file = st.file_uploader("Upload dataset for prediction", type=["csv"])
@@ -125,25 +125,38 @@ if fake_file is not None and true_file is not None:
 
         if "text" not in pred_df.columns:
             st.error("The uploaded dataset must contain a 'text' column.")
+
         else:
             st.success("Prediction dataset loaded!")
 
-            pred_df["clean_text"] = pred_df["text"].apply(wordopt)
-            pred_vectors = vectorization.transform(pred_df["clean_text"])
-
-            pred_df["Prediction"] = LR.predict(pred_vectors)
-            pred_df["Prediction"] = pred_df["Prediction"].apply(output_label)
-
-            st.subheader("Prediction Results")
-            st.dataframe(pred_df[["text", "Prediction"]])
-
-            csv = pred_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="Download Prediction Results",
-                data=csv,
-                file_name="predictions.csv",
-                mime="text/csv"
+            # Select number of random rows
+            sample_size = st.number_input(
+                "Select number of random records to predict:",
+                min_value=1,
+                max_value=len(pred_df),
+                value=min(5, len(pred_df))
             )
+
+            if st.button("Predict Random Records"):
+                sampled_df = pred_df.sample(n=sample_size).copy()
+
+                sampled_df["clean_text"] = sampled_df["text"].apply(wordopt)
+                sampled_vectors = vectorization.transform(sampled_df["clean_text"])
+
+                sampled_df["Prediction"] = LR.predict(sampled_vectors)
+                sampled_df["Prediction"] = sampled_df["Prediction"].apply(output_label)
+
+                st.subheader("Prediction Results on Random Records")
+                st.dataframe(sampled_df[["text", "Prediction"]])
+
+                csv = sampled_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download Random Predictions",
+                    data=csv,
+                    file_name="random_predictions.csv",
+                    mime="text/csv"
+                )
+
 
 else:
     st.info("Please upload both Fake.csv and True.csv to train the model.")
