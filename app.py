@@ -70,21 +70,6 @@ if fake_file and true_file:
     df = load_and_prepare_data(fake_df, true_df)
     vectorizer, LR = train_model(df)
 
-    # ==================== Option 1: Manual Text ==========================
-    st.markdown("---")
-    st.subheader("Option 1: Classify Manually Entered Text")
-
-    news_input = st.text_area("Enter news text:", height=150)
-
-    if st.button("Classify Text"):
-        if news_input.strip():
-            cleaned = wordopt(news_input)
-            x_vec = vectorizer.transform([cleaned])
-            pred = LR.predict(x_vec)[0]
-            st.success(f"Prediction: {'Fake News' if pred == 0 else 'Not Fake News'}")
-        else:
-            st.warning("Please enter some text to classify.")
-
     # ==================== Option 2: Predict Random Training Records ==========================
     st.markdown("---")
     st.subheader("Option 2: Predict Random Records From Uploaded Dataset")
